@@ -1,0 +1,114 @@
+# =============== นำเข้าไลบรารี ===============
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from sklearn.metrics import mean_squared_error, r2_score
+from prophet import Prophet
+
+# =============== โหลดและเตรียมข้อมูล ===============
+# อ่านข้อมูลจากไฟล์ CSV
+df = pd.read_csv("bangkok_air.csv", parse_dates=['date'], index_col="date")
+
+# ลบช่องว่างที่หน้าชื่อคอลัมน์
+df.columns = df.columns.str.strip()
+
+# ลบ NA หน้าคอลัมน์
+df.dropna(subset=['pm25','no2','o3'], inplace=True)
+
+# แปลงค่าที่ไม่ใช่ตัวเลขเป็น NaN และแปลงเป็น float
+df['no2'] = pd.to_numeric(df['no2'], errors='coerce')
+df['o3'] = pd.to_numeric(df['o3'], errors='coerce')
+df['pm25'] = pd.to_numeric(df['pm25'], errors='coerce')
+
+# ตรวจสอบผลลัพธ์
+print(df.info())
+print(df.head())
+
+# รีเซ็ต index และเปลี่ยนชื่อคอลัมน์ให้เหมาะกับ Prophet
+df_prophet = df.reset_index().rename(columns={'date': 'ds', 'pm25': 'y'})
+
+df_prophet['no2'] = df['no2'].values
+df_prophet['o3'] = df['o3'].values
+
+# แบ่งข้อมูลเป็นรายวัน และจัดการค่า NaN
+df_prophet = df_prophet.resample('D', on='ds').mean(numeric_only=True).reset_index()
+df_prophet.fillna(method='ffill', inplace=True)  # เติมค่า NaN ด้วยค่าก่อนหน้า
+
+# แบ่งชุดข้อมูลเป็น Train และ Test
+train_size = int(len(df_prophet) * 0.8)
+p_train, p_test = df_prophet.iloc[:train_size], df_prophet.iloc[train_size:]
+
+# =============== สร้างและฝึก Prophet Model ===============
+prop_model = Prophet(
+    changepoint_prior_scale=0.05,  # ปรับความยืดหยุ่นของโมเดล
+    seasonality_prior_scale=5.0,  # ปรับความสำคัญของฤดูกาล
+    holidays_prior_scale=10.0,     # ปรับความสำคัญของวันหยุด
+    seasonality_mode='multiplicative'  # ใช้ multiplicative seasonality
+)
+
+prop_model.add_regressor('o3')
+prop_model.add_regressor('no2')
+prop_model.fit(p_train)
+
+# สร้าง DataFrame สำหรับพยากรณ์
+last_date = p_test['ds'].max()  # หาวันสุดท้ายของ test set
+future_periods = 15  # พยากรณ์ล่วงหน้า 15 วัน
+
+# สร้าง Date range สำหรับ 12 เดือนล่วงหน้า
+future = pd.date_range(start=last_date + pd.DateOffset(days=1), periods=future_periods, freq='D')
+future = pd.DataFrame({'ds': future})
+
+# เติมค่า no2 และ o3 ให้ตรงกับขนาดของ future
+future['no2'] = df_prophet['no2'].iloc[-1]  # ใช้ค่า no2 วันสุดท้าย
+future['o3'] = df_prophet['o3'].iloc[-1]  # ใช้ค่า o3 วันสุดท้าย
+
+# ทำนายผลลัพธ์
+forecast = prop_model.predict(future)
+
+# ดึงค่าที่พยากรณ์ได้สำหรับช่วง Test
+predicted = forecast[['ds', 'yhat']].set_index('ds')
+
+# ดึงค่าพยากรณ์อนาคต 15 วันข้างหน้า
+future_forecast = forecast[['ds', 'yhat']].set_index('ds').tail(future_periods)
+
+# พยากรณ์ค่าของชุด test
+forecast_test = prop_model.predict(p_test[['ds', 'no2', 'o3']])
+predicted = forecast_test[['ds', 'yhat']].set_index('ds')
+
+
+# ตรวจสอบผลลัพธ์ของ predicted_test
+print(predicted.head())
+
+# คำนวณค่า MSE และ R² สำหรับ test
+mse = mean_squared_error(p_test['y'], predicted['yhat'])
+r2 = r2_score(p_test['y'], predicted['yhat'])
+print(f'Test MSE: {mse:.3f}')
+print(f'Test R²: {r2:.3f}')
+
+# คำนวณค่าความแม่นยำ
+mse = mean_squared_error(p_test['y'], predicted['yhat'])
+rmse = np.sqrt(mse)
+
+print("\nผลการประเมินโมเดล:")
+print(f"MSE: {mse:.2f}")
+print(f"RMSE: {rmse:.2f}")
+
+# =============== ฟังก์ชันสำหรับพล็อตกราฟ ===============
+def plot_forecasts(train, test, forecasts, future_forecast, title):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=train['ds'], y=train['y'], name='Train'))
+    fig.add_trace(go.Scatter(x=test['ds'], y=test['y'], name='Test'))
+    fig.add_trace(go.Scatter(x=test['ds'], y=forecasts, name='Forecast', line=dict(color='green')))
+    fig.add_trace(go.Scatter(x=future_forecast.index, y=future_forecast['yhat'], name='Future Forecast', line=dict(color='red', dash='dot')))
+    
+    fig.update_layout(template="simple_white", font=dict(size=18), title_text=title,
+                      width=750, title_x=0.5, height=450, xaxis_title='Date',
+                      yaxis_title='PM2.5')
+    fig.show()
+
+# เรียกใช้ฟังก์ชันพล็อตกราฟ
+plot_forecasts(p_train, p_test, predicted['yhat'], future_forecast, 'Prophet Forecast with 15-Day Prediction')
+
+# แสดงค่าพยากรณ์ 15 วันข้างหน้า
+print("\nพยากรณ์ 15 วันข้างหน้า:")
+print(future_forecast)
