@@ -1,0 +1,117 @@
+## This my restauran
+
+## Create data frame
+
+Restaurant <- function(){
+  print("Welcome to Puen Ban Restaurant!")
+  print("Hello! How can I help you?")
+  flush.console()
+  
+  ## create menu-drink dataframe
+  Rice_df <- data.frame(
+    rice_no = c(1, 2, 3),
+    rice_menu = c("stir-fried basil with pork", "crispy pork with basil", "stir-fried basil seafood"),
+    price_Baht = c(50, 60 , 60)
+  )
+  
+  drinks_df <- data.frame(
+    drinks_no = c(1, 2, 3),
+    drinks_menu = c("Coca-Cola", "Sprite", "Water"),
+    price_Baht = c(20, 20, 10)
+  )
+  
+  ## Hello user
+  
+  Yes <- c("Yes" , "yes" , "Y" , "y","Yes please")
+  No <- c("No" , "no" , "N" , "n")
+  No1 <- c("No" , "no" , "N" , "n")
+  
+  
+  
+  server <- readline ("Press Yes or No :  ")
+  if (server %in% Yes){
+    print("Sure!")
+  } else if (server %in% No){
+    stop("Thank you! I hope to see you again soon!")  
+  } else {
+    stop ("Try again")
+  }
+  
+  
+  ## present menu to a user
+  print("This is our menu ...")
+  print("-----------------------------------")
+  print(Rice_df)
+  flush.console()
+  
+  Rice_choice <- as.numeric(readline("Please ENTER the rice_no: "))
+  if ( !Rice_choice %in% Rice_df$rice_no) {
+    stop ("Invalid Rice_no. Please try again!!")
+  }
+  
+  ## add eggs 
+  eggs_price <- c(5)
+  
+  print("That's great")
+  print("Would you like to add a fried egg for just 5 baht?")
+  flush.console()
+  
+  eggs <- readline ("Press Yes or No :  ")
+  if (eggs %in% Yes){
+    print("Sure! Next ")
+  } else if (eggs %in% No){
+    print("Ok")  
+  } else {
+    stop ("Try again")
+  }
+  
+  
+  
+  
+  
+  ## present drinks menu to a user
+  print("This is our drinks menu ...")
+  print("-----------------------------------")
+  print(drinks_df)
+  flush.console()
+  
+  ## let user chooses drinks
+  drinks_choice <- as.numeric(readline("Please ENTER the drinks_no: "))
+  if (!drinks_choice %in% drinks_df$drinks_no) {
+    stop ("Invalid drinks_no. Please try again!!")
+  }
+  
+  ## define menu order
+  user_rice <- Rice_df[Rice_df$rice_no == Rice_choice, "rice_menu"]
+  user_drink <- drinks_df[drinks_df$drinks_no == drinks_choice, "drinks_menu"]
+  
+  ## define menu price
+  eggs_bill <- if (eggs %in% Yes){
+    as.numeric(5)
+  } else if (eggs %in% No) {
+    as.numeric(0)
+  } 
+  rice_price <- Rice_df[Rice_df$rice_no == Rice_choice, "price_Baht"]
+  drink_price <- drinks_df[drinks_df$drinks_no == drinks_choice, "price_Baht"]
+  total_price <- if (eggs %in% Yes){
+    rice_price + drink_price + eggs_price
+  } else if (eggs %in% No) {
+    rice_price + drink_price
+  } 
+  
+  
+  
+  ## check bill
+  print("Puen Ban restaurant bill")ww
+  print("-----------------------------------")
+  print(paste0("Your menu is: ", user_rice," ",rice_price," Baht"))
+  print(paste0("and add a fried egg: ", eggs_bill ," Baht "))
+  print(paste0("Your drink is: ", user_drink," ",drink_price," Baht"))
+  print("-----------------------------------")
+  print(paste0("Total: ",total_price," Baht"))
+  
+}
+
+Restaurant()
+
+
