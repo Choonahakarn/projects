@@ -1,0 +1,136 @@
+# install,load library
+library(caret)
+library(ggplot2)
+library(dplyr)
+
+data <- read.csv("TipsDataset.csv")
+
+# ตรวจสอบข้อมูล
+head(data)
+str(data)
+summary(data)
+
+# ตรวจสอบการมีค่าที่หายไป
+mean(complete.cases(data)) # should be one for clean data
+
+# แปลงข้อมูลเป็น numeric เพื่อให้ทำโมเดลง่ายขึ้น
+data$total <- as.numeric(as.character(data$total))
+data$time <- as.numeric(gsub("min", "", data$sitting_time))
+data$tips <- as.numeric(data$tips)
+data$person <- as.numeric(data$person)
+
+# ตรวจสอบการแปลงข้อมูล
+head(data)
+
+# ตรวจสอบความสัมพันธ์ของข้อมูล
+cor(data[, c("tips", "total", "time", "person")])
+
+# แปลงค่าคอลัมน์ tips เป็น 0 และ 1 ตามค่าเฉลี่ย
+tips_mean <- mean(data$tips, na.rm = TRUE)
+data$tips <- ifelse(data$tips > tips_mean, 1, 0)
+
+table(data$tips)
+class(data$tips)
+str(data)
+
+# แบ่งข้อมูลเป็นการฝึกและการทดสอบ
+set.seed(42) # lock data
+n <- nrow(data)
+id <- sample(1:n, size = n * 0.8)
+train_data <- data[id, ]
+test_data <- data[-id, ]
+
+# สร้างโมเดล
+logit_model <- glm(tips ~ person + total + time,
+                   data = train_data,
+                   family = "binomial")
+
+# ทำนายผล
+p_train <- predict(logit_model, type = "response")
+train_data$pred_tips <- ifelse(p_train >= 0.6, "MoreTips", "LessTips")
+head(train_data,10)
+
+# ทดสอบโมเดล
+p_test <- predict(logit_model, newdata = test_data, type = "response") # probability
+test_data$pred_tips <- ifelse(p_test >= 0.6, "MoreTips", "LessTips")
+head(test_data,5)
+
+# ตรวจสอบผลการทดสอบ
+confusionMatrix(factor(test_data$pred_tips, levels = c("LessTips", "MoreTips")),
+                factor(test_data$tips, levels = c(0, 1), labels = c("LessTips", "MoreTips")),
+                mode = "prec_recall", positive = "MoreTips")
+
+# แสดงผลการวิเคราะห์ด้วยกราฟ
+ggplot(data, aes(x = total, y = tips)) +
+  geom_point(aes(color = factor(tips))) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial")) +
+  labs(title = "Relationship between Total Bill and Tips",
+       x = "Total Bill",
+       y = "Tips",
+       color = "Above Average Tips") +
+  theme_minimal()
+
+## เตรียมโมเดลทำนายล่วงหน้า
+
+library(caret)
+library(ggplot2)
+library(dplyr)
+
+# เตรียมข้อมูล
+data <- read.csv("TipsDataset.csv")
+data$total <- as.numeric(as.character(data$total))
+data$time <- as.numeric(gsub("min", "", data$sitting_time))
+data$tips <- as.numeric(data$tips)
+data$person <- as.numeric(data$person)
+
+# แปลง tips เป็น factor binary
+tips_mean <- mean(data$tips, na.rm = TRUE)
+data$tips_binary <- factor(
+  ifelse(data$tips > tips_mean, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# แบ่งข้อมูล
+set.seed(42)
+n <- nrow(data)
+id <- sample(1:n, size = n * 0.8)
+train_data <- data[id, ]
+test_data <- data[-id, ]
+
+# Control สำหรับ Cross-Validation
+ctrl <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary
+)
+
+# Grid สำหรับ Tuning
+grid <- expand.grid(
+  .alpha = c(0, 0.5, 1),
+  .lambda = seq(0, 1, length = 5)
+)
+
+# โมเดล Elastic Net
+model <- train(
+  tips_binary ~ person + total + time,
+  data = train_data,
+  method = "glmnet",
+  metric = "ROC",
+  trControl = ctrl,
+  tuneGrid = grid
+)
+
+# ทำนาย
+predictions <- predict(model, newdata = test_data, type = "prob")
+test_data$pred <- predict(model, newdata = test_data)
+
+
+head(test_data,10)
+
+# Confusion Matrix
+confusionMatrix(
+  test_data$pred,
+  test_data$tips_binary,
+  positive = "Yes"
+)
