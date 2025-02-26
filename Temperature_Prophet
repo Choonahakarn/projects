@@ -1,0 +1,85 @@
+import pandas as pd
+from sklearn.metrics import mean_squared_error, r2_score
+from prophet import Prophet
+
+# อ่านข้อมูล
+df = pd.read_csv("DailyDelhiClimateTrain.csv", parse_dates=['date'], index_col="date")
+
+# แปลงชื่อคอลัมน์ให้เหมาะกับ Prophet
+df_prophet = df.reset_index().rename(columns={'date': 'ds', 'meantemp': 'y'})
+df_prophet['humidity'] = df['humidity'].values
+df_prophet['wind_speed'] = df['wind_speed'].values
+
+# แบ่งชุดข้อมูลเป็น Train และ Test
+train_size = int(len(df_prophet) * 0.8)
+p_train, p_test = df_prophet.iloc[:train_size], df_prophet.iloc[train_size:]
+
+# สร้างและฝึก Prophet Model
+prop_model = Prophet(
+    changepoint_prior_scale=0.01,  # ค่าเริ่มต้นคือ 0.05 ลองลดหรือเพิ่มได้ ควบคุมการเปลี่ยนแปลงแนวโน้ม
+    seasonality_prior_scale=10.0  # ควบคุมความยืดหยุ่นของฤดูกาล
+)
+
+prop_model.add_regressor('humidity')
+prop_model.add_regressor('wind_speed')
+prop_model.fit(p_train)
+
+# สร้าง future dataframe สำหรับ 12 เดือนล่วงหน้า (หลังจาก test set)
+last_date = p_test['ds'].max()  # หาวันสุดท้ายของ test set
+future_periods = 12
+
+# สร้าง Date range สำหรับ 12 เดือนล่วงหน้า
+future = pd.date_range(start=last_date + pd.DateOffset(months=1), periods=future_periods, freq='ME')
+future = pd.DataFrame({'ds': future})
+
+# เติมค่า humidity และ wind_speed โดยใช้ค่าล่าสุดของ p_train
+future['humidity'] = p_train['humidity'].iloc[-1]
+future['wind_speed'] = p_train['wind_speed'].iloc[-1]
+
+# ทำนายผลเฉพาะช่วงอนาคต
+forecast = prop_model.predict(future)
+
+# ดึงค่าพยากรณ์อนาคต 12 เดือน
+future_forecast = forecast[['ds', 'yhat']].set_index('ds')
+
+# พยากรณ์ค่าของชุด test
+forecast_test = prop_model.predict(p_test[['ds', 'humidity', 'wind_speed']])
+predicted = forecast_test[['ds', 'yhat']].set_index('ds')
+
+# คำนวณค่า MSE และ R² สำหรับ test
+mse = mean_squared_error(p_test['y'], predicted['yhat'])
+r2 = r2_score(p_test['y'], predicted['yhat'])
+print(f'Test MSE: {mse:.3f}')
+print(f'Test R²: {r2:.3f}')
+
+# ฟังก์ชันสำหรับพล็อตกราฟ
+import plotly.graph_objects as go
+
+def plot_forecasts(train, test, forecasts, future_forecast, title):
+    fig = go.Figure()
+    
+    # ข้อมูล Train
+    fig.add_trace(go.Scatter(x=train['ds'], y=train['y'], name='ข้อมูลเทรน'))
+    
+    # ข้อมูล Test
+    fig.add_trace(go.Scatter(x=test['ds'], y=test['y'], name='ข้อมูลฝึก'))
+    
+    # ข้อมูลพยากรณ์
+    fig.add_trace(go.Scatter(x=test['ds'], y=forecasts, name='ผลการทำนาย', line=dict(color='green')))
+    
+    # ข้อมูลพยากรณ์ล่วงหน้า
+    fig.add_trace(go.Scatter(x=future_forecast.index, y=future_forecast['yhat'], name='พยากรณ์อนาคต', line=dict(color='red', dash='dot')))
+    
+    # ตั้งค่ากราฟ
+    fig.update_layout(template="simple_white", font=dict(size=18), title_text=title,
+                      width=750, title_x=0.5, height=450, xaxis_title='Date',
+                      yaxis_title='Temperature')
+
+    fig.show()
+
+# เรียกใช้ฟังก์ชันพล็อตกราฟ
+plot_forecasts(p_train, p_test, predicted['yhat'], future_forecast, 'ผลพยากรณ์ข้อมูลอุณหภูมิล่วงหน้า 12 เดือน')
+
+# แสดงค่าพยากรณ์ 12 เดือนข้างหน้า
+print("\nพยากรณ์ 12 เดือนข้างหน้า:")
+print(future_forecast)
