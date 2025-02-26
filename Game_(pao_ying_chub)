@@ -1,0 +1,58 @@
+play_game <- function() {
+  player_score <- 0
+  bot_score <- 0
+  hands <- c("hammer", "scissor", "paper")
+  
+  for (round in 1:10) {
+    cat("\nRound", round, "of 10\n")
+    
+    # รับตัวเลือกจากผู้เล่นในแต่ละรอบ
+    player <- readline("Choose hammer, scissor, paper: ")
+    
+    # ตรวจสอบว่า input ถูกต้องหรือไม่
+    if (!(player %in% hands)) {
+      cat("Invalid choice, please try again.\n")
+      next
+    }
+    
+    # สุ่มตัวเลือกให้คอมพิวเตอร์ในแต่ละรอบ
+    bot <- sample(hands, 1)
+    cat("Computer chose:", bot, "\n")
+    
+    # เปรียบเทียบผลลัพธ์
+    if (player == bot) {
+      result <- "Tie"
+    } else if ((player == "hammer" && bot == "scissor") ||
+               (player == "scissor" && bot == "paper") ||
+               (player == "paper" && bot == "hammer")) {
+      result <- "You Win!"
+      player_score <- player_score + 1
+    } else {
+      result <- "You Lose!"
+      bot_score <- bot_score + 1
+    }
+    
+    # แสดงผลลัพธ์ของรอบนั้นและคะแนนปัจจุบัน
+    cat("Result:", result, "\n")
+    cat("Current Score - You:", player_score, "| Computer:", bot_score, "\n")
+  }
+  
+  # สรุปผลลัพธ์หลังจากเล่นครบ 10 รอบ
+  cat("\nGame Over\n")
+  cat("Final Score - You:", player_score, "| Computer:", bot_score, "\n")
+  
+  if (player_score > bot_score) {
+    cat("Congratulations! You won the game!\n")
+  } else if (player_score < bot_score) {
+    cat("Computer won the game. Better luck next time!\n")
+  } else {
+    cat("It's a tie game!\n")
+  }
+}
+
+# เรียกใช้ฟังก์ชันเพื่อเริ่มเกม
+play_game()
+
+## ในภาษา R สัญลักษณ์ | (แนวตั้ง) ใช้เพื่อแสดงการดำเนินการ "OR" ในการเปรียบเทียบเงื่อนไขต่าง
+## OR Logical Operator: ใช้เพื่อให้เช็คว่าอย่างน้อยหนึ่งในเงื่อนไขนั้นเป็นจริง ถ้าข้อใดข้อหนึ่งเป็นจริง ค่าที่ได้จะเป็นจริง  
+## ถ้าต้องการใช้เงื่อนไข "AND" ให้ใช้ 
