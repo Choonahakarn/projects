@@ -1,0 +1,389 @@
+# =============== นำเข้าไลบรารี ===============
+import pandas as pd            # ใช้สำหรับจัดการข้อมูล DataFrame
+import seaborn as sns          # ใช้สำหรับสร้างกราฟสวย ๆ
+import numpy as np             # ใช้สำหรับคำนวณตัวเลขเชิงวิทยาศาสตร์
+import plotly.express as px    # ใช้สำหรับสร้าง interactive visualization
+import plotly.graph_objects as go
+from pandas.plotting import register_matplotlib_converters
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+import matplotlib.pyplot as plt
+
+# =============== ตั้งค่าการแสดงผล ===============
+register_matplotlib_converters()
+%matplotlib inline 
+%config InlineBackend.figure_format='retina' 
+
+# =============== โหลดและเตรียมข้อมูล ===============
+# อ่านข้อมูลจากไฟล์ CSV
+df = pd.read_csv("DailyDelhiClimateTrain.csv", parse_dates=['date'], index_col="date")
+
+# เพิ่มคอลัมน์เกี่ยวกับเวลา
+df["year"] = df.index.year
+df['month'] = df.index.month 
+df['day'] = df.index.day
+df['dayofweek'] = df.index.dayofweek
+df["date"] = df.index.date
+
+# แสดงข้อมูล 5 แถวแรก
+df.head()
+
+# =============== ฟังก์ชันสำหรับพล็อตกราฟ ===============
+def plot_meantemp(df: pd.DataFrame, y: str) -> None:
+    fig = px.line(df, x='date', y=y, labels={'month': 'date'})
+    fig.update_layout(template="simple_white", font=dict(size=18), title_text='meantemp',
+                      width=650, title_x=0.5, height=400)
+    return fig.show()
+
+# พล็อตข้อมูลอุณหภูมิ
+plot_meantemp(df, y='meantemp')
+
+# =============== ตรวจสอบคุณภาพข้อมูล ===============
+# ตรวจสอบค่าว่าง
+print("ข้อมูลที่หายไป:")
+print(df.isnull().sum())
+
+# ตรวจสอบสถิติเบื้องต้น
+print("\nสถิติพื้นฐาน:")
+print(df.describe())
+
+# =============== วิเคราะห์อุณหภูมิตามปี ===============
+# สร้างกราฟเส้นแยกตามปี
+fig = px.line(df, x='date', y='meantemp', color='year', 
+              labels={'meantemp': 'Temperature', 'date': 'Date'}, 
+              title="Temperature Over the Years", 
+              template="simple_white")
+fig.update_layout(width=800, height=400, title_x=0.5, font=dict(size=16))
+fig.show()
+
+# =============== เตรียมข้อมูลสำหรับการวิเคราะห์ ===============
+# เลือกคอลัมน์ที่สนใจ
+df = df[['date','meantemp', 'humidity', 'wind_speed']]
+Data = df.copy()
+
+# =============== ตรวจสอบ Stationarity ===============
+def check_stationarity(series):
+    result = adfuller(series)
+    print('ADF Statistic:', result[0])
+    print('p-value:', result[1])
+    if result[1] <= 0.05:
+        print("ข้อมูลเป็น Stationary")
+    else:
+        print("ข้อมูลไม่เป็น Stationary")
+
+# ตรวจสอบแต่ละคอลัมน์
+for column in ['meantemp', 'humidity', 'wind_speed']:
+    print(f"\nตรวจสอบ Stationarity ของคอลัมน์: {column}")
+    check_stationarity(Data[column])
+
+# ทำ Differencing
+Data["meantemp_diff"] = Data["meantemp"].diff()
+Data.dropna(inplace=True)
+
+# ตรวจสอบ Stationarity หลัง Differencing
+print("\nตรวจสอบ Stationarity หลัง Differencing")
+check_stationarity(Data['meantemp_diff'].dropna())
+
+# พล็อตข้อมูลหลัง Differencing
+plot_meantemp(Data, y='meantemp_diff')
+
+# =============== วิเคราะห์ ACF และ PACF ===============
+# พล็อต ACF
+plt.figure(figsize=(12,5))
+plot_acf(Data["meantemp_diff"].dropna(), lags=30)
+plt.title("Autocorrelation Function (ACF)")
+plt.show()
+
+# พล็อต PACF
+plt.figure(figsize=(12,5))
+plot_pacf(Data["meantemp_diff"].dropna(), lags=30)
+plt.title("Partial Autocorrelation Function (PACF)")
+plt.show()
+
+# =============== แบ่งข้อมูลและสร้างโมเดล ARIMA ===============
+# แบ่งข้อมูล
+train = Data.iloc[:int(len(Data) * 0.8)]
+test = Data.iloc[int(len(Data) * 0.8):]
+
+print(f'Train shape: {train.shape}')
+print(f'Test shape: {test.shape}')
+
+# สร้างโมเดล ARIMA
+model = ARIMA(train['meantemp'], order=(12, 1, 12)).fit()
+ARIMA_Pred = model.forecast(len(test))
+
+
+# =============== สร้างกราฟ ARIMA ===============
+
+def plot_forecasts(forecasts: list[float], title: str) -> None:
+    """Function to plot the forecasts."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=train['date'], y=train['meantemp'], name='Train'))
+    fig.add_trace(go.Scatter(x=test['date'], y=test['meantemp'], name='Test'))
+    fig.add_trace(go.Scatter(x=test['date'], y=forecasts, name='Forecast'))
+    fig.update_layout(template="simple_white", font=dict(size=18), title_text=title,
+                      width=650, title_x=0.5, height=400, xaxis_title='Date',
+                      yaxis_title='Difference in Meantemp')
+
+    return fig.show()
+
+
+# Plot the forecasts
+plot_forecasts(ARIMA_Pred, 'ARIMA')
+
+# คำนวณค่าความแม่นยำ
+mse = mean_squared_error(test['meantemp'], ARIMA_Pred)
+r2 = r2_score(test['meantemp'], ARIMA_Pred)
+print('Test MSE:', mse)
+print('Test R²: %.3f' % r2)
+
+
+# =============== เตรียมข้อมูลรายเดือน ===============
+month_df = Data.select_dtypes(include=[np.number]).groupby(pd.Grouper(freq='ME')).mean()
+train_size = int(len(month_df) * 0.8)
+train, test = month_df.iloc[:train_size], month_df.iloc[train_size:]
+
+# =============== สร้างโมเดล SARIMA ===============
+# กำหนดพารามิเตอร์
+order = (1, 0, 0)  # Non-seasonal order (p, d, q)
+seasonal_order = (2, 1, 1, 12)  # Seasonal order (P, D, Q, S)
+
+# สร้างและฝึกโมเดล
+sarima_model = SARIMAX(endog=train['meantemp'], 
+                      exog=train[['humidity', 'wind_speed']],
+                      order=order, 
+                      seasonal_order=seasonal_order)
+sarima_model_fit = sarima_model.fit()
+
+# ทำนายผล
+sarima_pred = sarima_model_fit.predict(start=test.index[0], 
+                                     end=test.index[-1],
+                                     exog=test[['humidity', 'wind_speed']])
+
+
+# =============== สร้างกราฟ SARIMA ===============
+
+def plot_forecasts(forecasts: list[float], title: str) -> None:
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=train.index, y=train['meantemp'], name='Train'))
+    fig.add_trace(go.Scatter(x=test.index, y=test['meantemp'], name='Test'))
+    fig.add_trace(go.Scatter(x=test.index, y=forecasts, name='Forecast'))
+    fig.update_layout(template="simple_white", font=dict(size=18), title_text=title,
+                      width=650, title_x=0.5, height=400, xaxis_title='Date',
+                      yaxis_title='Difference in Meantemp')
+
+    return fig.show()
+
+
+# สร้างพยากรณ์ก่อน
+sarima_pred = sarima_model_fit.predict(start=test.index[0], end=test.index[-1],
+                                         exog=test[['humidity', 'wind_speed']])
+
+# แล้วค่อยพล็อต
+plot_forecasts(sarima_pred, 'SARIMA Forecast')
+
+
+# =============== ประเมินผลโมเดล SARIMA ===============
+# คำนวณค่าความแม่นยำ
+mae = mean_absolute_error(test['meantemp'], sarima_pred)
+mse = mean_squared_error(test['meantemp'], sarima_pred)
+rmse = np.sqrt(mse)
+mape = np.mean(np.abs((test['meantemp'] - sarima_pred) / test['meantemp'])) * 100
+
+print(f"MAE: {mae}")
+print(f"MSE: {mse}")
+print(f"RMSE: {rmse}")
+
+
+
+
+# =============== พยากรณ์อนาคต ===============
+# Check แนวโน้ม และ ค่า Variance 
+
+plt.figure(figsize=(12, 5))
+
+plt.subplot(2, 1, 1)
+plt.plot(train.index, train['humidity'], label='Humidity', color='blue')
+plt.title('Humidity Trend')
+plt.xlabel('Date')
+plt.ylabel('Humidity (%)')
+plt.legend()
+
+plt.subplot(2, 1, 2)
+plt.plot(train.index, train['wind_speed'], label='Wind Speed', color='red')
+plt.title('Wind Speed Trend')
+plt.xlabel('Date')
+plt.ylabel('Wind Speed (km/h)')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+# Check กราฟด้วย Rolling Mean
+train['humidity_rolling'] = train['humidity'].rolling(window=7).mean()
+train['wind_speed_rolling'] = train['wind_speed'].rolling(window=7).mean()
+
+plt.figure(figsize=(12, 5))
+
+plt.subplot(2, 1, 1)
+plt.plot(train.index, train['humidity'], alpha=0.5, label='Original Humidity', color='blue')
+plt.plot(train.index, train['humidity_rolling'], label='Rolling Mean (7 days)', color='darkblue')
+plt.title('Humidity Rolling Mean')
+plt.legend()
+
+plt.subplot(2, 1, 2)
+plt.plot(train.index, train['wind_speed'], alpha=0.5, label='Original Wind Speed', color='red')
+plt.plot(train.index, train['wind_speed_rolling'], label='Rolling Mean (7 days)', color='darkred')
+plt.title('Wind Speed Rolling Mean')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+print("\nค่าแปรนปรวนและค่าเฉลี่ย")
+print("Humidity Mean:", train['humidity'].mean())
+print("Humidity Variance:", train['humidity'].var())
+
+print("Wind Speed Mean:", train['wind_speed'].mean())
+print("Wind Speed Variance:", train['wind_speed'].var())
+
+# ใช้ค่าเฉลี่ยเคลื่อนที่ 7 วันล่าสุดจากชุดข้อมูล train
+avg_humidity_rolling = train['humidity'].rolling(window=7).mean().iloc[-1]
+avg_wind_speed_rolling = train['wind_speed'].rolling(window=7).mean().iloc[-1]
+avg_wind_speed = train['wind_speed'].mean()
+
+
+# สร้าง DataFrame สำหรับพยากรณ์อนาคต 15 วัน
+future_dates = pd.date_range(start=test.index[-1] + pd.Timedelta(days=1), periods=15, freq='D')
+future_exog = pd.DataFrame({
+    'humidity': [avg_humidity_rolling] * 15,
+    'wind_speed': [avg_wind_speed] * 15
+}, index=future_dates)
+
+# ทำการพยากรณ์
+sarima_forecast = sarima_model_fit.forecast(steps=15, exog=future_exog)
+sarima_forecast.index = future_dates
+
+
+# =============== แสดงผลการพยากรณ์ ===============
+# ฟังก์ชันแสดงผลการพยากรณ์
+def plot_forecasts(train, test, predictions, future_predictions=None, show_all=True , custom_title='ผลการพยากรณ์อุณหภูมิ'):
+    fig = go.Figure()
+
+    # แสดงกราฟทั้งหมด
+    if show_all:
+        # แสดงข้อมูลฝึก
+        fig.add_trace(go.Scatter(x=train.index, y=train['meantemp'], name='ข้อมูลฝึก'))
+        # แสดงข้อมูลทดสอบ
+        fig.add_trace(go.Scatter(x=test.index, y=test['meantemp'], name='ข้อมูลทดสอบ'))
+        # แสดงผลการทำนาย
+        fig.add_trace(go.Scatter(x=test.index, y=predictions, name='ผลการทำนาย'))
+    
+    # ถ้ามีการพยากรณ์อนาคต
+    if future_predictions is not None:
+        # กำหนดวันที่สำหรับพยากรณ์อนาคต
+        future_dates = pd.date_range(start=test.index[-1] + pd.Timedelta(days=1), periods=15, freq="D")
+        # แสดงกราฟพยากรณ์อนาคต 15 วัน
+        fig.add_trace(go.Scatter(x=future_dates, y=future_predictions, name='พยากรณ์อนาคตล่วงหน้า 15 วัน', line=dict(color='red')))
+
+    fig.update_layout(
+        template="simple_white",
+        font=dict(size=18),
+        title_text=custom_title,
+        width=800,
+        height=500,
+        xaxis_title='วันที่',
+        yaxis_title='อุณหภูมิเฉลี่ย'
+    )
+    
+    return fig.show()
+
+
+
+# แสดงผล
+print("\nแสดงผลข้อมูลที่พยากรณ์:")
+print(sarima_pred)
+
+# แสดงผลการพยากรณ์ทั้งหมด
+plot_forecasts(train, test, sarima_pred, sarima_forecast , show_all=True ,custom_title="พยากรณ์อุณหภูมิโดยรวม")
+
+# ใแสดงผลการพยากรณ์ 15 วัน
+plot_forecasts(train, test, sarima_pred, sarima_forecast, show_all=False , custom_title="พยากรณ์อนาคตล่วงหน้า 15 วัน")
+
+print("\nแสดงข้อมูลที่พยากรณ์อนาคต:")
+print(sarima_forecast)
+
+# คำนวณค่าความแม่นยำ
+mae = mean_absolute_error(test['meantemp'], sarima_pred)
+mse = mean_squared_error(test['meantemp'], sarima_pred)
+rmse = np.sqrt(mse)
+
+print("\nผลการประเมินโมเดล:")
+print(f"MAE: {mae:.2f}")
+print(f"MSE: {mse:.2f}")
+print(f"RMSE: {rmse:.2f}")
+
+
+
+# =============== พยากรณ์อนาคต ===============
+# สร้าง DataFrame สำหรับพยากรณ์อนาคต 12 เดือน
+future_dates = pd.date_range(start=test.index[-1] + pd.DateOffset(months=1), periods=12, freq='ME')  # กำหนดเป็นรายเดือน
+future_exog = pd.DataFrame({
+    'humidity': [avg_humidity_rolling] * 12 ,# ใช้ค่าเฉลี่ยล่าสุดของ humidity
+    'wind_speed': [avg_wind_speed] * 12  # ใช้ค่าเฉลี่ยล่าสุดของ wind_speed
+}, index=future_dates)
+
+# ทำนายผลล่วงหน้า 12 เดือน
+sarima_forecast = sarima_model_fit.forecast(steps=12, exog=future_exog)
+sarima_forecast.index = future_dates
+
+# =============== แสดงผลการพยากรณ์ ===============
+def plot_forecasts(train, test, predictions, future_predictions=None):
+    fig = go.Figure()
+    
+    # แสดงข้อมูลฝึก
+    fig.add_trace(go.Scatter(x=train.index, y=train['meantemp'], name='ข้อมูลฝึก'))
+    # แสดงข้อมูลทดสอบ
+    fig.add_trace(go.Scatter(x=test.index, y=test['meantemp'], name='ข้อมูลทดสอบ'))
+    # แสดงผลการทำนาย
+    fig.add_trace(go.Scatter(x=test.index, y=predictions, name='ผลการทำนาย'))
+    
+    # ถ้ามีการพยากรณ์อนาคต
+    if future_predictions is not None:
+        fig.add_trace(go.Scatter(x=future_predictions.index, y=future_predictions, name='พยากรณ์อนาคต'))
+    
+    fig.update_layout(
+        template="simple_white",
+        font=dict(size=18),
+        title_text='ผลการพยากรณ์อุณหภูมิรายเดือน',
+        width=800,
+        height=500,
+        xaxis_title='เดือน',
+        yaxis_title='อุณหภูมิเฉลี่ย'
+    )
+    
+    return fig.show()
+
+# แสดงผลการพยากรณ์
+plot_forecasts(train, test, sarima_pred, sarima_forecast)
+print("\nแสดงข้อมูลที่พยากรณ์อนาคต:")
+print(sarima_forecast)
+
+# คำนวณค่าความแม่นยำเฉพาะในช่วง `test`
+mae = mean_absolute_error(test['meantemp'], sarima_pred)  # คำนวณ MAE
+mse = mean_squared_error(test['meantemp'], sarima_pred)  # คำนวณ MSE
+rmse = np.sqrt(mse)  # คำนวณ RMSE
+mape = np.mean(np.abs((test['meantemp'] - sarima_pred) / test['meantemp'])) * 100  # คำนวณ MAPE
+
+# แสดงผลการประเมิน
+print("\nผลการประเมินโมเดล:")
+print(f"MAE: {mae:.2f}")  
+print(f"MSE: {mse:.2f}")  
+print(f"RMSE: {rmse:.2f}")  
+print(f"MAPE: {mape:.2f}%")  
+
+print("MAE:", mae)
+print("Variance of actual values:", test["meantemp"].var())
