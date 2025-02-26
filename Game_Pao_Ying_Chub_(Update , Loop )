@@ -1,0 +1,65 @@
+import random
+
+# ตัวเลือกเป่ายิ้งฉุบ
+choices = ["hammer", "scissor", "paper","exit"]
+
+# คะแนนเริ่มต้นของผู้เล่นและคอมพิวเตอร์
+user_score = 0
+computer_score = 0
+
+# ฟังก์ชันตรวจสอบผลลัพธ์
+# if , elif เงื่อนไขเป็นจริง
+# else เงื่อนไขเป็นเท็จ
+def determine_winner(user, computer):
+    if user == computer:
+        return "tie"
+    elif (user == "hammer" and computer == "scissor") or \
+         (user == "scissor" and computer == "paper") or \
+         (user == "paper" and computer == "hammer"):
+        return "user"
+    else:
+        return "computer"
+
+# เริ่มการแข่งขัน 10 รอบ
+for round in range(1, 11):
+    print(f"Round {round}")
+
+    # รับข้อมูลจากผู้เล่น
+    user_choice = input("Choose your hand (hammer, scissor, paper (or type 'exit' to quit) ): ").lower()
+    while user_choice not in choices:
+        print("Invalid choice. Please choose from [hammer, scissor, paper].")
+        user_choice = input("Choose your hand (hammer, scissor, paper (or type 'exit' to quit) ): ").lower()
+
+    # ตรวจสอบว่าผู้เล่นต้องการเลิกเล่นหรือไม่
+    if user_choice == "exit":  #
+        print("You decided to quit the game.")
+        break
+
+
+    # คอมพิวเตอร์สุ่มเลือก
+    computer_choice = random.choice(choices)
+    print(f"Computer chose: {computer_choice}")
+
+    # ตรวจสอบผลลัพธ์
+
+    winner = determine_winner(user_choice, computer_choice)
+    if winner == "user":
+        print("You win this round!")
+        user_score += 1
+    elif winner == "computer":
+        print("Computer wins this round!")
+        computer_score += 1
+    else:
+        print("This round is a tie!")
+
+    # แสดงคะแนนหลังจากแต่ละรอบ
+    print(f"Score: You {user_score} - {computer_score} Computer\n")
+
+# แสดงผลลัพธ์สุดท้าย
+print("Final Results:")
+if user_score > computer_score:
+    print(f"You win the game! Final Score: You {user_score} - {computer_score} Computer")
+elif user_score < computer_score:
+    print(f"Computer wins the game! Final Score: You {user_score} - {computer_score} Computer")
+else:
+    print(f"It's a tie! Final Score: You {user_score} - {computer_score} Computer")
